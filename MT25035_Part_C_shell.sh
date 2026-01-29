@@ -1,12 +1,13 @@
 #!/bin/bash
+# MT25035_Part_C_shell.sh
+# Minimal, beginner-friendly script to run Part C experiments.
+# Must run as root (sudo).
 
-# Check for root privileges
 if [[ $EUID -ne 0 ]]; then
-   echo "This script must be run with sudo to manage network namespaces and perf."
-   exit 1
+    echo "Run with sudo"
+    exit 1
 fi
 
-# Configuration based on requirements
 PORT=8080
 DURATION=5
 MSG_SIZES=(1024 4096 16384 65536)
@@ -16,23 +17,34 @@ CSV_FILE="results.csv"
 SERVER_IP="10.0.0.1"
 CLIENT_IP="10.0.0.2"
 
-# Ensure perf can access hardware counters
-echo -1 > /proc/sys/kernel/perf_event_paranoid 2>/dev/null
+# Try to allow perf counters (ignore errors)
+echo -1 > /proc/sys/kernel/perf_event_paranoid 2>/dev/null || true
 
-# 1. Compilation
-echo "Compiling implementations..."
-# All versions use the common header
-gcc MT25035_Part_A_A1_server.c -o A1_server -lpthread
-gcc MT25035_Part_A_A1_client.c -o A1_client
-gcc MT25035_Part_A_A2_server.c -o A2_server -lpthread
-gcc MT25035_Part_A_A2_client.c -o A2_client
-gcc MT25035_Part_A_A3_server.c -o A3_server -lpthread
-gcc MT25035_Part_A_A3_client.c -o A3_client
+# ---------- Compile (fail early if compile error) ----------
+gcc -O2 MT25035_Part_A_A1_server.c -o A1_server -lpthread || { echo "Compile A1_server failed"; exit 1; }
+gcc -O2 MT25035_Part_A_A1_client.c -o A1_client || { echo "Compile A1_client failed"; exit 1; }
+gcc -O2 MT25035_Part_A_A2_server.c -o A2_server -lpthread || { echo "Compile A2_server failed"; exit 1; }
+gcc -O2 MT25035_Part_A_A2_client.c -o A2_client || { echo "Compile A2_client failed"; exit 1; }
+gcc -O2 MT25035_Part_A_A3_server.c -o A3_server -lpthread || { echo "Compile A3_server failed"; exit 1; }
+gcc -O2 MT25035_Part_A_A3_client.c -o A3_client || { echo "Compile A3_client failed"; exit 1; }
 
-# 2. Setup Network Namespaces (Requirement: Separate namespaces)
-echo "Setting up isolated network namespaces..."
+# ---------- Cleanup helper ----------
+cleanup() {
+    ip netns del ns_server 2>/dev/null || true
+    ip netns del ns_client 2>/dev/null || true
+    pkill -f perf 2>/dev/null || true
+    rm -f A*_server A*_client server.tmp perf.tmp client.tmp
+}
+trap cleanup EXIT
+
+# Remove leftover namespaces (if any)
+ip netns del ns_server 2>/dev/null || true
+ip netns del ns_client 2>/dev/null || true
+
+# ---------- Setup namespaces ----------
 ip netns add ns_server
 ip netns add ns_client
+
 ip link add veth_s type veth peer name veth_c
 ip link set veth_s netns ns_server
 ip link set veth_c netns ns_client
@@ -45,63 +57,69 @@ ip netns exec ns_client ip addr add ${CLIENT_IP}/24 dev veth_c
 ip netns exec ns_client ip link set veth_c up
 ip netns exec ns_client ip link set lo up
 
-# Initialize CSV Header
-echo "Version,MsgSize,Threads,Throughput_Gbps,Latency_us,Cycles,L1_Misses,LLC_Misses,CS" > $CSV_FILE
+# ---------- CSV Header ----------
+echo "Version,MsgSize,Threads,Throughput_Gbps,Latency_us,Cycles,L1_Misses,LLC_Misses,ContextSwitches" > $CSV_FILE
 
-# 3. Experiment Loop
+# ---------- Experiments ----------
 for v in "${VERSIONS[@]}"; do
     for size in "${MSG_SIZES[@]}"; do
         for threads in "${THREAD_COUNTS[@]}"; do
-            echo "------------------------------------------------"
-            echo "Testing $v | MsgSize: $size | Threads: $threads"
 
-            # Start Server in background with perf profiling
-            # Tracking cycles, L1 misses, LLC misses, and context switches
-            ip netns exec ns_server perf stat -e cycles,L1-dcache-load-misses,LLC-load-misses,context-switches \
-                -x, -o perf_output.tmp \
-                ./"${v}_server" $PORT $size $threads > server_log.tmp 2>&1 &
-            SERVER_PID=$!
-            
-            sleep 2 # Wait for server to bind
+            # Start server under perf (perf writes to perf.tmp). Keep perf in background.
+            ip netns exec ns_server perf stat \
+                -e cycles,L1-dcache-load-misses,LLC-load-misses,context-switches \
+                -x, -o perf.tmp \
+                ./${v}_server $PORT $size $threads \
+                > server.tmp 2>&1 &
 
-            # Run Client
-            # Client connects to SERVER_IP and runs for DURATION seconds
-            client_log=$(ip netns exec ns_client ./"${v}_client" $SERVER_IP $PORT $size $DURATION 2>/dev/null)
-            
-            # Stop the server
-            kill $SERVER_PID >/dev/null 2>&1
-            wait $SERVER_PID 2>/dev/null
+            PERF_PID=$!
+            # give server a moment to start
             sleep 1
 
-            # --- Data Extraction & Calculation ---
-            # Extract total bytes from client output
-            total_bytes=$(echo "$client_log" | grep "Total bytes received" | awk '{print $NF}' | tr -d '\r')
-            
-            # Default to 0 if command failed to avoid awk syntax errors
+            # Run client from client namespace, capture output
+            client_log=$(ip netns exec ns_client timeout $((DURATION+5)) \
+                ./${v}_client $SERVER_IP $PORT $size $DURATION 2>&1)
+
+            echo "$client_log" > client.tmp
+
+            # Ask the server process inside the server namespace to shut down gracefully
+            ip netns exec ns_server pkill -INT -f "${v}_server" 2>/dev/null || true
+
+            # Wait for perf (and server) to finish
+            wait $PERF_PID 2>/dev/null || true
+
+            # Extract total bytes received (assumes client prints a line containing "Total bytes received <num>")
+            total_bytes=$(awk '/Total bytes received/ {print $NF}' client.tmp | tail -n1)
             [[ -z "$total_bytes" ]] && total_bytes=0
 
-            # Throughput (Gbps): (Bytes * 8 bits) / (Duration * 10^9)
-            throughput=$(awk "BEGIN {if ($total_bytes > 0) print ($total_bytes * 8) / ($DURATION * 1000000000); else print 0}")
-            
-            # Latency (us): Average time per full message (8 fields)
-            latency=$(awk "BEGIN {if ($total_bytes > 0) print ($DURATION * 1000000) / ($total_bytes / ($size * 8)); else print 0}")
+            # Messages received (integer)
+            messages_received=$(awk -v tb="$total_bytes" -v sz="$size" 'BEGIN{ if(sz>0) print int(tb/sz); else print 0 }')
 
-            # Extract Perf Metrics (Cycles, L1/LLC Misses, Context Switches)
-            cycles=$(grep "cycles" perf_output.tmp | cut -d, -f1 || echo 0)
-            l1_miss=$(grep "L1-dcache-load-misses" perf_output.tmp | cut -d, -f1 || echo 0)
-            llc_miss=$(grep "LLC-load-misses" perf_output.tmp | cut -d, -f1 || echo 0)
-            cs=$(grep "context-switches" perf_output.tmp | cut -d, -f1 || echo 0)
+            # Throughput in Gbps
+            throughput=$(awk -v tb="$total_bytes" -v d="$DURATION" 'BEGIN{printf "%.6f", (tb*8)/(d*1e9)}')
 
-            # Log to CSV
-            echo "$v,$size,$threads,$throughput,$latency,$cycles,$l1_miss,$llc_miss,$cs" >> $CSV_FILE
-            echo "Result: ${throughput} Gbps | ${latency} us"
+            # Average latency per message in microseconds (DURATION seconds / messages)
+            if [[ "$messages_received" -gt 0 ]]; then
+                latency_us=$(awk -v d="$DURATION" -v m="$messages_received" 'BEGIN{printf "%.3f", (d*1e6)/m}')
+            else
+                latency_us=0
+            fi
+
+            # Parse perf outputs (remove thousands separators if present)
+            cycles=$(awk -F, '/cycles/ {gsub(/,/, "", $1); print $1; exit}' perf.tmp 2>/dev/null || echo 0)
+            l1=$(awk -F, '/L1-dcache-load-misses/ {gsub(/,/, "", $1); print $1; exit}' perf.tmp 2>/dev/null || echo 0)
+            llc=$(awk -F, '/LLC-load-misses/ {gsub(/,/, "", $1); print $1; exit}' perf.tmp 2>/dev/null || echo 0)
+            cs=$(awk -F, '/context-switches/ {gsub(/,/, "", $1); print $1; exit}' perf.tmp 2>/dev/null || echo 0)
+
+            # Append to CSV
+            echo "$v,$size,$threads,$throughput,$latency_us,$cycles,$l1,$llc,$cs" >> $CSV_FILE
+
+            # small pause between runs
+            sleep 0.5
         done
     done
 done
 
-# 4. Cleanup
-echo "Cleaning up network configurations..."
-ip netns del ns_server 2>/dev/null
-ip netns del ns_client 2>/dev/null
-rm A1_server A1_client A2_server A2_client A3_server A3_client *.tmp 2>/dev/null
-echo "Experiments complete. Data saved to $CSV_FILE"
+# ---------- Cleanup ----------
+# (trap will run cleanup)
+echo "Experiments complete → $CSV_FILE"
