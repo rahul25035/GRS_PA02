@@ -1,0 +1,64 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <time.h>
+
+#include "MT25035_Part_A_A1_common.h"
+
+int main(int argc, char *argv[]) {
+    if (argc != 5) {
+        printf("Usage: %s <server_ip> <port> <message_size> <duration_sec>\n",
+               argv[0]);
+        return 1;
+    }
+
+    char *server_ip = argv[1];
+    int port = atoi(argv[2]);
+    int msg_size = atoi(argv[3]);
+    int duration = atoi(argv[4]);
+
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+
+    struct sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    inet_pton(AF_INET, server_ip, &addr.sin_addr);
+
+    connect(sock, (struct sockaddr *)&addr, sizeof(addr));
+
+    printf("[Client] Connected to server\n");
+
+    char *buffer = malloc(msg_size);
+    memset(buffer, 'X', msg_size);
+
+    long bytes_sent = 0;
+    time_t start = time(NULL);
+    time_t last = start;
+
+    char *recv_buf = malloc(msg_size);
+
+    while (time(NULL) - start < duration) {
+        ssize_t s = send(sock, buffer, msg_size, 0);
+        if (s > 0)
+            bytes_sent += s;
+
+        recv(sock, recv_buf, msg_size, MSG_DONTWAIT);
+
+        time_t now = time(NULL);
+        if (now != last) {
+            printf("[Client] Bytes sent: %ld\n", bytes_sent);
+            last = now;
+        }
+    }
+
+free(recv_buf);
+
+
+    printf("[Client] Done. Total bytes sent = %ld\n", bytes_sent);
+
+    free(buffer);
+    close(sock);
+    return 0;
+}
