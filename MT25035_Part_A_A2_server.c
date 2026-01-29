@@ -14,15 +14,22 @@ typedef struct {
     int msg_size;
 } client_arg_t;
 
+static int active_threads = 0;
+static int max_threads = 0;
+
 void *client_handler(void *arg) {
     client_arg_t *carg = (client_arg_t *)arg;
 
-    printf("[Server-A2] Client connected (msg_size=%d)\n", carg->msg_size);
+    printf("[Server-A2] Client handler started (msg_size=%d)\n",
+           carg->msg_size);
 
     message_t msg;
     msg.field_size = carg->msg_size;
 
     struct iovec iov[NUM_FIELDS];
+    struct msghdr msg_hdr;
+
+    memset(&msg_hdr, 0, sizeof(msg_hdr));
 
     for (int i = 0; i < NUM_FIELDS; i++) {
         msg.fields[i] = malloc(msg.field_size);
@@ -32,11 +39,14 @@ void *client_handler(void *arg) {
         iov[i].iov_len  = msg.field_size;
     }
 
+    msg_hdr.msg_iov = iov;
+    msg_hdr.msg_iovlen = NUM_FIELDS;
+
     long messages_sent = 0;
     time_t last = time(NULL);
 
     while (1) {
-        ssize_t ret = writev(carg->client_fd, iov, NUM_FIELDS);
+        ssize_t ret = sendmsg(carg->client_fd, &msg_hdr, 0);
         if (ret <= 0)
             break;
 
@@ -49,13 +59,15 @@ void *client_handler(void *arg) {
         }
     }
 
+    printf("[Server-A2] Client disconnected\n");
+
     for (int i = 0; i < NUM_FIELDS; i++)
         free(msg.fields[i]);
 
     close(carg->client_fd);
     free(carg);
 
-    printf("[Server-A2] Client disconnected\n");
+    active_threads--;
     return NULL;
 }
 
@@ -67,7 +79,7 @@ int main(int argc, char *argv[]) {
 
     int port = atoi(argv[1]);
     int msg_size = atoi(argv[2]);
-    int max_threads = atoi(argv[3]);
+    max_threads = atoi(argv[3]);
 
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -79,16 +91,24 @@ int main(int argc, char *argv[]) {
     bind(server_fd, (struct sockaddr *)&addr, sizeof(addr));
     listen(server_fd, max_threads);
 
-    printf("[Server-A2] Listening on port %d\n", port);
+    printf("[Server-A2] Listening on port %d (max threads = %d)\n",
+           port, max_threads);
 
     while (1) {
         int client_fd = accept(server_fd, NULL, NULL);
+
+        if (active_threads >= max_threads) {
+            printf("[Server-A2] Thread limit reached, rejecting client\n");
+            close(client_fd);
+            continue;
+        }
 
         client_arg_t *arg = malloc(sizeof(client_arg_t));
         arg->client_fd = client_fd;
         arg->msg_size = msg_size;
 
         pthread_t tid;
+        active_threads++;
         pthread_create(&tid, NULL, client_handler, arg);
         pthread_detach(tid);
     }

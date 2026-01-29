@@ -24,7 +24,7 @@ int main(int argc, char *argv[]) {
     inet_pton(AF_INET, server_ip, &addr.sin_addr);
 
     connect(sock, (struct sockaddr *)&addr, sizeof(addr));
-    printf("[Client-A2] Connected\n");
+    printf("[Client-A3] Connected\n");
 
     size_t msg_bytes = msg_size * 8;
     char *recv_buf = malloc(msg_bytes);
@@ -42,12 +42,12 @@ int main(int argc, char *argv[]) {
 
         time_t now = time(NULL);
         if (now != last) {
-            printf("[Client-A2] Bytes received: %ld\n", bytes_received);
+            printf("[Client-A3] Bytes received: %ld\n", bytes_received);
             last = now;
         }
     }
 
-    printf("[Client-A2] Done. Total bytes received = %ld\n",
+    printf("[Client-A3] Done. Total bytes received = %ld\n",
            bytes_received);
 
     free(recv_buf);

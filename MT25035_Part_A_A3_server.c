@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <arpa/inet.h>
+#include <sys/uio.h>
+#include <sys/socket.h>
 #include <time.h>
 
 #include "MT25035_Part_A_A1_common.h"
@@ -16,45 +18,71 @@ typedef struct {
 static int active_threads = 0;
 static int max_threads = 0;
 
+/* Drain error queue to reap zerocopy completions */
+static void drain_error_queue(int fd) {
+    char buf[256];
+    struct msghdr msg = {0};
+    struct iovec iov = { buf, sizeof(buf) };
+    char cmsgbuf[512];
+
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    msg.msg_control = cmsgbuf;
+    msg.msg_controllen = sizeof(cmsgbuf);
+
+    while (recvmsg(fd, &msg, MSG_ERRQUEUE | MSG_DONTWAIT) > 0) {
+        /* nothing else to do */
+    }
+}
+
 void *client_handler(void *arg) {
     client_arg_t *carg = (client_arg_t *)arg;
 
-    printf("[Server] Client handler started (msg_size=%d)\n",
+    printf("[Server-A3] Client handler started (msg_size=%d)\n",
            carg->msg_size);
 
     message_t msg;
     msg.field_size = carg->msg_size;
 
+    struct iovec iov[NUM_FIELDS];
+    struct msghdr msg_hdr;
+
+    memset(&msg_hdr, 0, sizeof(msg_hdr));
+
     for (int i = 0; i < NUM_FIELDS; i++) {
         msg.fields[i] = malloc(msg.field_size);
         memset(msg.fields[i], 'A' + i, msg.field_size);
+
+        iov[i].iov_base = msg.fields[i];
+        iov[i].iov_len  = msg.field_size;
     }
+
+    msg_hdr.msg_iov = iov;
+    msg_hdr.msg_iovlen = NUM_FIELDS;
 
     long messages_sent = 0;
     time_t last = time(NULL);
 
     while (1) {
-        for (int i = 0; i < NUM_FIELDS; i++) {
-            ssize_t s = send(carg->client_fd,
-                             msg.fields[i],
-                             msg.field_size,
-                             0);
-            if (s <= 0) {
-                goto cleanup;
-            }
-        }
+        ssize_t ret = sendmsg(carg->client_fd,
+                              &msg_hdr,
+                              MSG_ZEROCOPY);
+        if (ret <= 0)
+            break;
 
         messages_sent++;
 
+        /* reap completions */
+        drain_error_queue(carg->client_fd);
+
         time_t now = time(NULL);
         if (now != last) {
-            printf("[Server] Messages sent: %ld\n", messages_sent);
+            printf("[Server-A3] Messages sent: %ld\n", messages_sent);
             last = now;
         }
     }
 
-cleanup:
-    printf("[Server] Client disconnected\n");
+    printf("[Server-A3] Client disconnected\n");
 
     for (int i = 0; i < NUM_FIELDS; i++)
         free(msg.fields[i]);
@@ -78,6 +106,10 @@ int main(int argc, char *argv[]) {
 
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
 
+    /* enable zerocopy */
+    int one = 1;
+    setsockopt(server_fd, SOL_SOCKET, SO_ZEROCOPY, &one, sizeof(one));
+
     struct sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
@@ -86,17 +118,20 @@ int main(int argc, char *argv[]) {
     bind(server_fd, (struct sockaddr *)&addr, sizeof(addr));
     listen(server_fd, max_threads);
 
-    printf("[Server] Listening on port %d (max threads = %d)\n",
+    printf("[Server-A3] Listening on port %d (max threads = %d)\n",
            port, max_threads);
 
     while (1) {
         int client_fd = accept(server_fd, NULL, NULL);
 
         if (active_threads >= max_threads) {
-            printf("[Server] Thread limit reached, rejecting client\n");
+            printf("[Server-A3] Thread limit reached, rejecting client\n");
             close(client_fd);
             continue;
         }
+
+        /* must enable zerocopy on accepted socket too */
+        setsockopt(client_fd, SOL_SOCKET, SO_ZEROCOPY, &one, sizeof(one));
 
         client_arg_t *arg = malloc(sizeof(client_arg_t));
         arg->client_fd = client_fd;

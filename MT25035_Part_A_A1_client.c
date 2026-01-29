@@ -30,35 +30,29 @@ int main(int argc, char *argv[]) {
 
     printf("[Client] Connected to server\n");
 
-    char *buffer = malloc(msg_size);
-    memset(buffer, 'X', msg_size);
+    char *recv_buf = malloc(msg_size);
 
-    long bytes_sent = 0;
+    long bytes_received = 0;
     time_t start = time(NULL);
     time_t last = start;
 
-    char *recv_buf = malloc(msg_size);
-
     while (time(NULL) - start < duration) {
-        ssize_t s = send(sock, buffer, msg_size, 0);
-        if (s > 0)
-            bytes_sent += s;
+        ssize_t r = recv(sock, recv_buf, msg_size, 0);
+        if (r <= 0)
+            break;
 
-        recv(sock, recv_buf, msg_size, MSG_DONTWAIT);
+        bytes_received += r;
 
         time_t now = time(NULL);
         if (now != last) {
-            printf("[Client] Bytes sent: %ld\n", bytes_sent);
+            printf("[Client] Bytes received: %ld\n", bytes_received);
             last = now;
         }
     }
 
-free(recv_buf);
+    printf("[Client] Done. Total bytes received = %ld\n", bytes_received);
 
-
-    printf("[Client] Done. Total bytes sent = %ld\n", bytes_sent);
-
-    free(buffer);
+    free(recv_buf);
     close(sock);
     return 0;
 }
