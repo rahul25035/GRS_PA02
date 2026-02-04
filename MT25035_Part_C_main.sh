@@ -98,3 +98,6 @@ done
 
 #cleanup:
 rm a1_server a1_client a2_server a2_client a3_server a3_client
+
+#plots:
+python3 MT25035_Part_D_Plots.py
