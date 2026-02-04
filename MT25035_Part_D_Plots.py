@@ -1,101 +1,112 @@
 # MT25035_Part_D_Plots.py
 
 import matplotlib
-matplotlib.use("Agg")  # Non-interactive backend (no GUI)
+matplotlib.use("Agg")
 
-import pandas as pd
 import matplotlib.pyplot as plt
+import pandas as pd
+from io import StringIO
 
-# -----------------------------
-# Load results
-# -----------------------------
-CSV_FILE = "MT25035_Part_C_Results.csv"
-df = pd.read_csv(CSV_FILE)
+data = """impl,field_size,threads,throughput_gbps,latency_us,cycles,cache_misses,llc_misses,context_switches
+a1,64,1,0.000098,41841.004,25042868,756324,30299,478
+a1,64,2,0.000199,20618.557,52415916,1277414,55449,970
+a1,64,4,0.000396,10330.579,102271861,1188522,68775,1942
+a1,64,8,0.000800,5122.951,205783394,1743683,110711,3917
+a1,256,1,0.000400,40983.607,28113617,603372,29844,488
+a1,256,2,0.000800,20491.803,54631901,1121728,52773,976
+a1,256,4,0.001593,10288.066,91132536,3025525,122079,1953
+a1,256,8,0.003185,5144.033,208276934,4469673,245735,3900
+a1,1024,1,0.001593,41152.263,24916893,1057172,46619,486
+a1,1024,2,0.003172,20661.157,46557110,1686265,87335,968
+a1,1024,4,0.006370,10288.066,93626026,3509416,174718,1950
+a1,1024,8,0.012714,5154.639,190340866,5472638,311165,3888
+a1,4096,1,0.006344,41322.314,28733979,1452841,105680,484
+a1,4096,2,0.012740,20576.132,53716193,2701530,204449,976
+a1,4096,4,0.025428,10309.278,105366413,5000927,409089,1944
+a1,4096,8,0.050751,5165.289,217489331,8067799,753631,3882
+a2,64,1,0.286369,14.303,21083697822,412270,30304,699148
+a2,64,2,0.416548,9.833,35493291425,512123,32911,1016968
+a2,64,4,0.547359,7.483,65310304032,846129,50366,1336360
+a2,64,8,0.818908,5.002,108633130651,669352,43528,2000177
+a2,256,1,0.982825,16.670,20039291579,365179,28810,599870
+a2,256,2,1.500625,10.918,33631225557,770188,50496,915924
+a2,256,4,2.000431,8.190,62990355628,991798,51823,1221002
+a2,256,8,3.043413,5.383,104355498713,714669,46952,1858474
+a2,1024,1,3.556278,18.428,20172258224,372935,34905,542648
+a2,1024,2,5.458552,12.006,34055098516,569049,35968,832923
+a2,1024,4,7.226661,9.069,61998162253,1049578,49373,1102733
+a2,1024,8,11.193641,5.855,101604327965,1047812,79397,1708803
+a2,4096,1,10.769216,24.342,19367730950,286762,25395,410816
+a2,4096,2,15.810875,16.580,32906696345,1045470,64592,603142
+a2,4096,4,21.713833,12.073,61260404111,3468323,155701,828374
+a2,4096,8,38.425592,6.822,101122905859,509007,27165,1466800
+a3,64,1,0.222147,18.438,19091689320,190986,14156,542350
+a3,64,2,0.343135,11.937,34095420557,301349,15372,837753
+a3,64,4,0.444855,9.207,59689424200,382359,18130,1086089
+a3,64,8,0.683125,5.996,90411339807,374285,21005,1668700
+a3,256,1,0.859647,19.059,19020278410,204029,15102,524696
+a3,256,2,1.292131,12.680,33132503038,489744,25797,788675
+a3,256,4,1.743456,9.397,58910911984,486079,21272,1064147
+a3,256,8,2.699883,6.068,89440786859,341088,18746,1648669
+a3,1024,1,2.977799,22.008,19007713056,164905,12663,454379
+a3,1024,2,4.764415,13.755,33241912036,329421,17486,727004
+a3,1024,4,6.279207,10.437,59025412565,634877,24736,958154
+a3,1024,8,9.980707,6.566,90417703455,336480,18647,1523742
+a3,4096,1,8.137526,32.214,17766489667,150059,12620,310427
+a3,4096,2,13.846761,18.932,32612152949,276335,14732,528221
+a3,4096,4,19.374486,13.530,55242607097,893279,27222,739090
+a3,4096,8,30.807163,8.509,86833645221,1076904,81982,1176122
+"""
 
-# Ensure numeric columns
-numeric_cols = [
-    "field_size", "threads", "throughput_gbps",
-    "latency_us", "cycles", "cache_misses"
-]
-df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric)
+df = pd.read_csv(StringIO(data))
 
-# -----------------------------
-# Derived metrics
-# -----------------------------
-# Message size = 8 fields
-df["bytes_per_msg"] = df["field_size"] * 8
-
-# Total bytes transferred = throughput * duration
-DURATION = 10  # seconds (same as experiment)
-df["bytes_transferred"] = (df["throughput_gbps"] * 1e9 / 8) * DURATION
-
-# Cycles per byte
+df["bytes_transferred"] = (df["throughput_gbps"] * 1e9 / 8) * 10
 df["cycles_per_byte"] = df["cycles"] / df["bytes_transferred"]
 
-# -----------------------------
-# Plot 1: Throughput vs Message Size
-# -----------------------------
 plt.figure()
 for impl in ["a1", "a2", "a3"]:
-    sub = df[(df["impl"] == impl) & (df["threads"] == 8)]
-    plt.plot(sub["field_size"], sub["throughput_gbps"], marker="o", label=impl)
-
+    sub = df[(df.impl == impl) & (df.threads == 8)]
+    plt.plot(sub.field_size, sub.throughput_gbps, marker="o", label=impl)
+plt.xscale("log")
 plt.xlabel("Message Size (bytes)")
 plt.ylabel("Throughput (Gbps)")
-plt.title("Throughput vs Message Size (8 threads)")
 plt.legend()
-plt.grid(True)
-plt.xscale("log")
+plt.grid()
 plt.savefig("throughput_vs_message_size.png", bbox_inches="tight")
 plt.close()
 
-# -----------------------------
-# Plot 2: Latency vs Thread Count
-# -----------------------------
 plt.figure()
 for impl in ["a1", "a2", "a3"]:
-    sub = df[(df["impl"] == impl) & (df["field_size"] == 1024)]
-    plt.plot(sub["threads"], sub["latency_us"], marker="o", label=impl)
-
+    sub = df[(df.impl == impl) & (df.field_size == 1024)]
+    plt.plot(sub.threads, sub.latency_us, marker="o", label=impl)
 plt.xlabel("Thread Count")
 plt.ylabel("Latency (µs)")
-plt.title("Latency vs Thread Count (1024-byte messages)")
 plt.legend()
-plt.grid(True)
+plt.grid()
 plt.savefig("latency_vs_threads.png", bbox_inches="tight")
 plt.close()
 
-# -----------------------------
-# Plot 3: Cache Misses vs Message Size
-# -----------------------------
 plt.figure()
 for impl in ["a1", "a2", "a3"]:
-    sub = df[(df["impl"] == impl) & (df["threads"] == 8)]
-    plt.plot(sub["field_size"], sub["cache_misses"], marker="o", label=impl)
-
-plt.xlabel("Message Size (bytes)")
-plt.ylabel("Cache Misses")
-plt.title("Cache Misses vs Message Size (8 threads)")
-plt.legend()
-plt.grid(True)
+    sub = df[(df.impl == impl) & (df.threads == 8)]
+    plt.plot(sub.field_size, sub.cache_misses, marker="o", label=impl)
 plt.xscale("log")
 plt.yscale("log")
+plt.xlabel("Message Size (bytes)")
+plt.ylabel("Cache Misses")
+plt.legend()
+plt.grid()
 plt.savefig("cache_misses_vs_message_size.png", bbox_inches="tight")
 plt.close()
 
-# -----------------------------
-# Plot 4: CPU Cycles per Byte
-# -----------------------------
 plt.figure()
 for impl in ["a1", "a2", "a3"]:
-    sub = df[(df["impl"] == impl) & (df["threads"] == 8)]
-    plt.plot(sub["field_size"], sub["cycles_per_byte"], marker="o", label=impl)
-
+    sub = df[(df.impl == impl) & (df.threads == 8)]
+    plt.plot(sub.field_size, sub.cycles_per_byte, marker="o", label=impl)
+plt.xscale("log")
 plt.xlabel("Message Size (bytes)")
 plt.ylabel("CPU Cycles per Byte")
-plt.title("CPU Cycles per Byte vs Message Size (8 threads)")
 plt.legend()
-plt.grid(True)
-plt.xscale("log")
+plt.grid()
 plt.savefig("cycles_per_byte_vs_message_size.png", bbox_inches="tight")
 plt.close()
