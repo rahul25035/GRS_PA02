@@ -1,12 +1,12 @@
-# GRS_PA02 – Client–Server Performance Benchmark
+# GRS_PA02 – Client–Server Performance
 
 This repository contains a simple client–server benchmark written in C. The goal of this project is to study how different ways of sending data affect performance. We measure throughput, latency, CPU cycles, cache misses, and context switches.
 
 The project is divided into three parts:
 
-* **A1**: Basic send/recv
-* **A2**: Vectorized I/O using `sendmsg`
-* **A3**: Zero-copy send using `MSG_ZEROCOPY`
+* **A1**: Basic send/recv (two copy)
+* **A2**: Vectorized I/O using `sendmsg` (one copy)
+* **A3**: Zero-copy send using `MSG_ZEROCOPY` (zero copy)
 
 All experiments are run using **separate network namespaces** for the client and the server, to ensure proper isolation.
 
@@ -32,10 +32,10 @@ Each server handles multiple clients using threads. Each client can also create 
 
 ---
 
-### Benchmark and Analysis Files
+### Analysis Files
 
-* `MT25035_Part_C_main.sh` – Main script that runs all benchmarks
-* `MT25035_Part_C_Results.csv` – Output file with all measured results
+* `MT25035_Part_C_main.sh` – Main script that runs all codes
+* `MT25035_Part_C_Results.csv` – CSV file with all measured results
 * `MT25035_Part_D_Plots.py` – Python script to generate plots from the CSV file
 
 ---
@@ -106,9 +106,9 @@ Arguments:
 
 ---
 
-## How to Run Full Benchmark (Part C)
+## How to Run Full Experiment (Part C)
 
-⚠️ **Must be run as root** (required for namespaces and perf).
+**Must be run as root** (required for namespaces and perf).
 
 ```bash
 sudo make partC
