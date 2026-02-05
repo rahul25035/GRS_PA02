@@ -1,3 +1,4 @@
+# Roll no: MT25035
 # GRS_PA02 – Client–Server Performance
 
 This repository contains a simple client–server benchmark written in C. The goal of this project is to study how different ways of sending data affect performance. We measure throughput, latency, CPU cycles, cache misses, and context switches.
@@ -10,7 +11,6 @@ The project is divided into three parts:
 
 All experiments are run using **separate network namespaces** for the client and the server, to ensure proper isolation.
 
----
 
 ## File Overview
 
@@ -30,7 +30,6 @@ All experiments are run using **separate network namespaces** for the client and
 
 Each server handles multiple clients using threads. Each client can also create multiple threads.
 
----
 
 ### Analysis Files
 
@@ -38,13 +37,11 @@ Each server handles multiple clients using threads. Each client can also create 
 * `MT25035_Part_C_Results.csv` – CSV file with all measured results
 * `MT25035_Part_D_Plots.py` – Python script to generate plots from the CSV file
 
----
 
 ### Build System
 
 * `Makefile` – Used to compile and run the programs
 
----
 
 ## Implementation Details
 
@@ -70,7 +67,6 @@ Differences between parts:
 * **A2**: Sends all fields together using `sendmsg()`.
 * **A3**: Uses `sendmsg()` with `MSG_ZEROCOPY` to reduce data copying.
 
----
 
 ## How to Build
 
@@ -86,7 +82,6 @@ This will generate the following binaries:
 * `a2_server`, `a2_client`
 * `a3_server`, `a3_client`
 
----
 
 ## How to Run Individual Programs
 
@@ -104,7 +99,6 @@ Arguments:
 * `duration`: run time in seconds
 * `max_threads`: maximum server threads
 
----
 
 ## How to Run Full Experiment (Part C)
 
@@ -123,7 +117,6 @@ This will:
 5. Save results to `MT25035_Part_C_Results.csv`
 6. Generate plots using Python
 
----
 
 ## Output
 
@@ -138,7 +131,6 @@ This will:
 
 * Plots are generated as `.png` files by `MT25035_Part_D_Plots.py`.
 
----
 
 ## Cleanup
 
@@ -148,7 +140,6 @@ To remove all binaries and generated files:
 make clean
 ```
 
----
 
 ## Notes
 
@@ -156,7 +147,6 @@ make clean
 * `perf` errors due to normal process exit are ignored by design.
 * All logic is kept minimal to make results easy to compare.
 
----
 
 ## Summary
 
