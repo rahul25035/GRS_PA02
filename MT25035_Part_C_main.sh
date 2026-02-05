@@ -1,5 +1,22 @@
 #!/bin/bash
 # MT25035_Part_C_main.sh
+set -euo pipefail
+
+ip netns delete ns_server 2>/dev/null || true
+ip netns delete ns_client 2>/dev/null || true
+ip netns add ns_server
+ip netns add ns_client
+ip link add veth_s type veth peer name veth_c || true
+ip link set veth_s netns ns_server
+ip link set veth_c netns ns_client
+ip netns exec ns_server ip addr add 10.0.0.1/24 dev veth_s
+ip netns exec ns_client ip addr add 10.0.0.2/24 dev veth_c
+ip netns exec ns_server ip link set lo up
+ip netns exec ns_client ip link set lo up
+ip netns exec ns_server ip link set veth_s up
+ip netns exec ns_client ip link set veth_c up
+
+trap 'ip netns delete ns_server || true; ip netns delete ns_client || true' EXIT
 
 echo "[*] Compiling programs..."
 
@@ -43,8 +60,8 @@ for IMPL in a1 a2 a3; do
         -e cycles,cache-misses,LLC-load-misses,context-switches \
         $CLIENT $FS $T $DURATION 2>&1)
 
-      kill $SERVER_PID
-      wait $SERVER_PID 2>/dev/null
+      kill $SERVER_PID 2>/dev/null || true
+      wait $SERVER_PID 2>/dev/null || true
 
       TOTAL_MSGS=$(echo "$PERF_OUT" | \
         grep MESSAGES | awk '{sum += $NF} END {print sum}')
@@ -74,6 +91,4 @@ for IMPL in a1 a2 a3; do
   done
 done
 
-rm a1_server a1_client a2_server a2_client a3_server a3_client
-
-python3 MT25035_Part_D_Plots.py
+rm -f a1_server a1_client a2_server a2_client a3_server a3_client

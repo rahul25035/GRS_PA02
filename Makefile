@@ -35,7 +35,7 @@ run-a3-server:
 run-a3-client:
 	./a3_client 64 8 10
 
-part-c:
+partC:
 	chmod +x MT25035_Part_C_main.sh
 	./MT25035_Part_C_main.sh
 

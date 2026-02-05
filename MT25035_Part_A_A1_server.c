@@ -1,5 +1,9 @@
 /* MT25035_Part_A_A1_server.c */
 
+#define _GNU_SOURCE
+#include <sched.h>
+#include <fcntl.h>
+
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <pthread.h>
@@ -42,6 +46,9 @@ void *handle_client(void *arg) {
     struct message *m = create_message(ta->field_size);
     char recv_buf[NUM_FIELDS * ta->field_size];
 
+    dprintf(1, "SERVER THREAD %lu CONNECTED\n",
+            (unsigned long)pthread_self());
+
     while (1) {
         int n = recv(c, recv_buf, sizeof(recv_buf), 0);
         if (n <= 0)
@@ -58,6 +65,11 @@ void *handle_client(void *arg) {
 }
 
 int main(int argc, char *argv[]) {
+    /* join server network namespace */
+    int fd = open("/var/run/netns/ns_server", O_RDONLY);
+    setns(fd, CLONE_NEWNET);
+    close(fd);
+
     if (argc != 3) {
         write(
             2,

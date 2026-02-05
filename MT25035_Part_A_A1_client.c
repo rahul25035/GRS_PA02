@@ -1,5 +1,9 @@
 /* MT25035_Part_A_A1_client.c */
 
+#define _GNU_SOURCE
+#include <sched.h>
+#include <fcntl.h>
+
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <pthread.h>
@@ -22,9 +26,11 @@ void *client_thread(void *arg) {
 
     struct sockaddr_in a = {
         .sin_family = AF_INET,
-        .sin_port = htons(8080),
-        .sin_addr.s_addr = htonl(0x7f000001)
+        .sin_port = htons(8080)
     };
+
+    /* server IP inside server namespace */
+    inet_pton(AF_INET, "10.0.0.1", &a.sin_addr);
 
     connect(s, (struct sockaddr *)&a, sizeof(a));
 
@@ -53,6 +59,11 @@ void *client_thread(void *arg) {
 }
 
 int main(int argc, char *argv[]) {
+    /* join client network namespace */
+    int fd = open("/var/run/netns/ns_client", O_RDONLY);
+    setns(fd, CLONE_NEWNET);
+    close(fd);
+
     if (argc != 4) {
         write(
             2,
